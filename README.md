@@ -5,26 +5,22 @@ Simply run the program, and hit "Start", and when you're playing the game any ta
 
 Was built with 1920 x 1080 resolution in mind. However, it "should" work with most other resolutions. However, it's important to note that your game resolution must match your displays resolution. And you must be playing in fullscreen mode, or fullscreen(windowed) mode.
 
-Files required are:
-{
+Files required:
+
 HFS.py
 favourite.png
 newtalent.png
 hotslogo.ico
-}
-All files should be in the same directory.
-{
+
 Libraries required:
 tkinter
-pyautogui
 skimage
+pyautogui
 threading
 win32gui
 numpy
 ctypes
 time
 cv2
-}
+
 - Neil J. Bruce
-
-
