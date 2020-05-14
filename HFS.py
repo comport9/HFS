@@ -106,7 +106,7 @@ class Window():
 			image = self.get_screenshot()
 			loc = self.check_for_hearts(image)
 			new = self.check_for_new_talent(image)
-			if loc != None:
+			if loc != None and new == True:
 				x, y = self.mouse_position()
 				self.select_talent(loc)
 				self.mouse_move(x, y)
