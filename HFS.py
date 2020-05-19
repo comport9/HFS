@@ -30,7 +30,7 @@ CHECK_TALENT = (75, 1032, 80, 15)
 SENSITIVITY = 60
 CHECK_TALENT_RANGE = [[0, 0, 255-SENSITIVITY], [255, SENSITIVITY, 255]]
 
-# x, y - y += 77*index(HEART_LOCS)
+# x, y - y += 77 * index(HEART_LOCS)
 TALENT_SELECT = (200, 390)
 
 # x, y
@@ -50,17 +50,11 @@ class Window():
 		self.scaleX = self.screen_width / DEFAULT_WIDTH
 		self.scaleY = self.screen_height / DEFAULT_HEIGHT
 		self.font = tkFont.Font(family='Tahoma', size=20, weight='bold')
-		self.waittime = 3
-
-		self.starttime = 0
 
 		self.start()
 
 		self.window.protocol("WM_DELETE_WINDOW", self.exit)
 		self.window.mainloop()
-
-	def doNothing(self):
-		print('...do nothing...')
 
 	# Start button. Starts the Watcher.
 	def start(self):
@@ -110,11 +104,7 @@ class Window():
 	# Starts main program.
 	def start_watcher(self):
 		self.stop()
-		self.startime = 0
 		while self.watcher_status == True:
-			# endtime = time.time() - self.starttime
-			# print(f'{endtime:.3f}')
-			# self.starttime = time.time()
 			time.sleep(1)
 			image = self.get_screenshot()
 			loc = self.check_for_hearts(image)
@@ -127,7 +117,7 @@ class Window():
 				x, y = self.mouse_position()
 				self.open_talent()
 				self.mouse_move(x, y)
-				time.sleep(.3)
+				time.sleep(.2)
 				image = self.get_screenshot()
 				loc = self.check_for_hearts(image)
 				x, y = self.mouse_position()
@@ -195,20 +185,13 @@ class Window():
 		width, height = self.scale_XY(width, height)
 		talent = cv2.resize(talent, (width, height))
 
-		talent2 = cv2.imread(NEWTALENT2)
-		height, width, channels = talent2.shape
-		width, height = self.scale_XY(width, height)
-		talent2 = cv2.resize(talent, (width, height))
-
 		x, y, w, h = CHECK_TALENT
 		x, y = self.scale_XY(x, y)
 		crop = image[y:y+height, x:x+width]
 		talent = self.clean_image(talent)
-		talent2 = self.clean_image(talent2)
 		crop = self.clean_image(crop)
 		comp = self.compare_images(crop, talent)
-		comp2 = self.compare_images(crop, talent2)
-		if comp > .90 or comp2 > .90:
+		if comp > .85:
 			return True
 		return False
 
