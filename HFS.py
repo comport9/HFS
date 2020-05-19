@@ -1,4 +1,4 @@
-from skimage import measure
+from skimage.metrics import structural_similarity
 import pyautogui
 from tkinter import *
 from tkinter import font as tkFont
@@ -11,6 +11,7 @@ import cv2
 
 FAVOURITE = 'favourite.png'
 NEWTALENT = 'newtalent.png'
+NEWTALENT2 = 'newtalent2.png'
 DEFAULT_WIDTH = 1920
 DEFAULT_HEIGHT = 1080
 BACKGROUND_COLOUR = '#1c2833'
@@ -37,15 +38,21 @@ TALENT_OPEN = (110, 975)
 
 class Window():
 	def __init__(self):
-		self.window = Tk()	
+		self.window = Tk()
+		self.title = 'HotS Favourites Selector'
+		self.window.title(self.title)
 		self.window.geometry('300x110')
 		self.window.configure(background=BACKGROUND_COLOUR)
-		self.window.iconbitmap("HotSLogo.ico")
+		self.window.iconbitmap("HFS.ico")
+		self.window.resizable(False, False)
 		self.screen_width = self.window.winfo_screenwidth()
 		self.screen_height = self.window.winfo_screenheight()
 		self.scaleX = self.screen_width / DEFAULT_WIDTH
 		self.scaleY = self.screen_height / DEFAULT_HEIGHT
-		self.font = tkFont.Font(family='Tahoma', size=20, weight='bold')	
+		self.font = tkFont.Font(family='Tahoma', size=20, weight='bold')
+		self.waittime = 3
+
+		self.starttime = 0
 
 		self.start()
 
@@ -58,12 +65,13 @@ class Window():
 	# Start button. Starts the Watcher.
 	def start(self):
 		self.watcher_status = False
-		self.window.title('HFS is stopped...')
+		if self.title != 'HotS Favourites Selector':
+			self.window.title('HFS has stopped...')
 		self.startButton = Button(	self.window, 
 									text='Start', 
 									width=16, 
 									height=2, 
-									font=self.font, 
+									font=self.font,
 									bg=BUTTON_START, 
 									fg='white',
 									activebackground=START_ACTIVE,
@@ -75,6 +83,7 @@ class Window():
 	def stop(self):
 		self.watcher_status = True
 		self.window.title('HFS is running...')
+		self.title = 'HFS is running...'
 		self.startButton = Button(	self.window, 
 									text='Stop', 
 									width=16, height=2, 
@@ -101,7 +110,11 @@ class Window():
 	# Starts main program.
 	def start_watcher(self):
 		self.stop()
+		self.startime = 0
 		while self.watcher_status == True:
+			# endtime = time.time() - self.starttime
+			# print(f'{endtime:.3f}')
+			# self.starttime = time.time()
 			time.sleep(1)
 			image = self.get_screenshot()
 			loc = self.check_for_hearts(image)
@@ -114,7 +127,7 @@ class Window():
 				x, y = self.mouse_position()
 				self.open_talent()
 				self.mouse_move(x, y)
-				time.sleep(.2)
+				time.sleep(.3)
 				image = self.get_screenshot()
 				loc = self.check_for_hearts(image)
 				x, y = self.mouse_position()
@@ -152,7 +165,7 @@ class Window():
 
 	# Compares images, returning a SSIM number. 1 is a perfect match.
 	def compare_images(self, img1, img2):
-		return measure.compare_ssim(img1, img2, multichannel=True)
+		return structural_similarity(img1, img2, multichannel=True)
 
 	# Takes a screenshot and returns it.
 	def get_screenshot(self):
@@ -181,13 +194,21 @@ class Window():
 		height, width, channels = talent.shape
 		width, height = self.scale_XY(width, height)
 		talent = cv2.resize(talent, (width, height))
+
+		talent2 = cv2.imread(NEWTALENT2)
+		height, width, channels = talent2.shape
+		width, height = self.scale_XY(width, height)
+		talent2 = cv2.resize(talent, (width, height))
+
 		x, y, w, h = CHECK_TALENT
 		x, y = self.scale_XY(x, y)
 		crop = image[y:y+height, x:x+width]
 		talent = self.clean_image(talent)
+		talent2 = self.clean_image(talent2)
 		crop = self.clean_image(crop)
 		comp = self.compare_images(crop, talent)
-		if comp > .90:
+		comp2 = self.compare_images(crop, talent2)
+		if comp > .90 or comp2 > .90:
 			return True
 		return False
 
