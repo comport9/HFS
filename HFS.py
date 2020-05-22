@@ -9,7 +9,7 @@ import ctypes
 import time
 import cv2
 
-FAVOURITE = 'favourite.png'
+FAVOURITE = 'heart.png'
 NEWTALENT = 'newtalent.png'
 NEWTALENT2 = 'newtalent2.png'
 DEFAULT_WIDTH = 1920
@@ -21,8 +21,8 @@ BUTTON_STOP = '#ad402f'
 STOP_ACTIVE = '#d9503b'
 
 # x, y, w, h - Heart graphic.
-HEART_LOCS = [(38, 363, 19, 22), (38, 440, 19, 22), (38, 517, 19, 22), (38, 594, 19, 22), (38, 671, 19, 22), (38, 748, 19, 22)]
-																								
+#HEART_LOCS = [(38, 363, 19, 22), (38, 440, 19, 22), (38, 517, 19, 22), (38, 594, 19, 22), (38, 671, 19, 22), (38, 748, 19, 22)]
+HEART_LOCS = [(38, 362, 17, 17), (38, 439, 17, 17), (38, 516, 17, 17), (38, 593, 17, 17), (38, 671, 17, 17), (38, 748, 17, 17)]																					
 # x, y, w, h - New talent indicator.
 CHECK_TALENT = (75, 1032, 80, 15)
 
@@ -101,10 +101,16 @@ class Window():
 		self.window.destroy()
 		self.window.quit()
 
+	# Gets the currently focused window.
+	def check_focus(self):
+		return win32gui.GetWindowText(win32gui.GetForegroundWindow())
+
 	# Starts main program.
 	def start_watcher(self):
 		self.stop()
 		while self.watcher_status == True:
+			while self.check_focus() != 'Heroes of the Storm':
+				time.sleep(2)
 			time.sleep(1)
 			image = self.get_screenshot()
 			loc = self.check_for_hearts(image)
@@ -174,7 +180,7 @@ class Window():
 			x, y = self.scale_XY(x, y)
 			crop = image[y:y+height, x:x+width]
 			comp = self.compare_images(crop, favourite)
-			if comp > .60:
+			if comp > .90:
 				return count
 		return None
 
