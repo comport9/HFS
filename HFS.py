@@ -100,6 +100,7 @@ class Window():
 		self.watcher_status = False
 		self.window.destroy()
 		self.window.quit()
+		sys.exit()
 
 	# Gets the currently focused window.
 	def check_focus(self):
