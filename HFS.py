@@ -92,7 +92,7 @@ class Window():
 	# Creates a thread inwhich to run the watcher.
 	def activate_watcher_thread(self):
 		thread = threading.Thread(target=self.start_watcher)
-		thread.deamon = True
+		# thread.deamon = True // This caused the previous version to continue running in the background.
 		thread.start()
 
 	# Exits Watcher, destroys all windows.
@@ -229,3 +229,4 @@ class Window():
 
 if __name__ == '__main__':
 	win = Window()
+	sys.exit()
