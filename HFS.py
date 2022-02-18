@@ -52,8 +52,6 @@ class Window():
 		self.font = tkFont.Font(family='Tahoma', size=20, weight='bold')
 
 		self.start()
-
-		self.window.protocol("WM_DELETE_WINDOW", self.exit)
 		self.window.mainloop()
 
 	# Start button. Starts the Watcher.
@@ -91,13 +89,13 @@ class Window():
 
 	# Creates a thread inwhich to run the watcher.
 	def activate_watcher_thread(self):
-		thread = threading.Thread(target=self.start_watcher)
-		# thread.deamon = True // This caused the previous version to continue running in the background.
-		thread.start()
+		self.thread = threading.Thread(target=self.start_watcher, daemon=True)
+		self.thread.start()
 
 	# Exits Watcher, destroys all windows.
 	def exit(self):
 		self.watcher_status = False
+		self.thread.join()
 		self.window.destroy()
 		self.window.quit()
 		sys.exit()
