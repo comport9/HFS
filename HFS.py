@@ -1,17 +1,25 @@
-from skimage.metrics import structural_similarity
-import pyautogui
+"""
+HFS — HotS Favourites Selector
+Auto-selects your favourited talents in Heroes of the Storm via on-screen image
+matching. Press Start, then play; favourited talents are picked for you.
+"""
+
+import sys
+import time
+import ctypes
+import threading
+
 from tkinter import *
 from tkinter import font as tkFont
-import threading
-import win32gui
-import numpy as np
-import ctypes
-import time
+
 import cv2
+import numpy as np
+import pyautogui
+import win32gui
+from skimage.metrics import structural_similarity
 
 FAVOURITE = 'heart.png'
 NEWTALENT = 'newtalent.png'
-NEWTALENT2 = 'newtalent2.png'
 DEFAULT_WIDTH = 1920
 DEFAULT_HEIGHT = 1080
 BACKGROUND_COLOUR = '#1c2833'
@@ -20,211 +28,218 @@ START_ACTIVE = '#3b97d9'
 BUTTON_STOP = '#ad402f'
 STOP_ACTIVE = '#d9503b'
 
-# x, y, w, h - Heart graphic.
-#HEART_LOCS = [(38, 363, 19, 22), (38, 440, 19, 22), (38, 517, 19, 22), (38, 594, 19, 22), (38, 671, 19, 22), (38, 748, 19, 22)]
-HEART_LOCS = [(38, 362, 17, 17), (38, 439, 17, 17), (38, 516, 17, 17), (38, 593, 17, 17), (38, 671, 17, 17), (38, 748, 17, 17)]																					
+GAME_TITLE = 'Heroes of the Storm'
+
+# Win32 mouse event flags.
+MOUSEEVENTF_LEFTDOWN = 0x0002
+MOUSEEVENTF_LEFTUP = 0x0004
+
+# x, y, w, h - Heart graphic (one per talent row).
+HEART_LOCS = [(38, 362, 17, 17), (38, 439, 17, 17), (38, 516, 17, 17),
+              (38, 593, 17, 17), (38, 671, 17, 17), (38, 748, 17, 17)]
 # x, y, w, h - New talent indicator.
 CHECK_TALENT = (75, 1032, 80, 15)
 
 # HSV range to cut from images.
 SENSITIVITY = 60
-CHECK_TALENT_RANGE = [[0, 0, 255-SENSITIVITY], [255, SENSITIVITY, 255]]
+CHECK_TALENT_RANGE = [[0, 0, 255 - SENSITIVITY], [255, SENSITIVITY, 255]]
 
-# x, y - y += 77 * index(HEART_LOCS)
+# Match thresholds (SSIM, 1.0 == a perfect match).
+HEART_THRESHOLD = 0.90
+TALENT_THRESHOLD = 0.85
+
+# x, y - first talent row; rows are spaced TALENT_ROW_SPACING apart (pre-scaling).
 TALENT_SELECT = (200, 390)
+TALENT_ROW_SPACING = 77
 
-# x, y
+# x, y - the button that opens the talent panel.
 TALENT_OPEN = (110, 975)
 
-class Window():
-	def __init__(self):
-		self.window = Tk()
-		self.title = 'HotS Favourites Selector'
-		self.window.title(self.title)
-		self.window.geometry('300x110')
-		self.window.configure(background=BACKGROUND_COLOUR)
-		self.window.iconbitmap("HFS.ico")
-		self.window.resizable(False, False)
-		self.screen_width = self.window.winfo_screenwidth()
-		self.screen_height = self.window.winfo_screenheight()
-		self.scaleX = self.screen_width / DEFAULT_WIDTH
-		self.scaleY = self.screen_height / DEFAULT_HEIGHT
-		self.font = tkFont.Font(family='Tahoma', size=20, weight='bold')
 
-		self.start()
-		self.window.mainloop()
+class Window:
+    def __init__(self):
+        self.window = Tk()
+        self.window.title('HotS Favourites Selector')
+        self.window.geometry('300x110')
+        self.window.configure(background=BACKGROUND_COLOUR)
+        self.window.iconbitmap('HFS.ico')
+        self.window.resizable(False, False)
+        self.window.protocol('WM_DELETE_WINDOW', self.on_close)
 
-	# Start button. Starts the Watcher.
-	def start(self):
-		self.watcher_status = False
-		if self.title != 'HotS Favourites Selector':
-			self.window.title('HFS has stopped...')
-		self.startButton = Button(	self.window, 
-									text='Start', 
-									width=16, 
-									height=2, 
-									font=self.font,
-									bg=BUTTON_START, 
-									fg='white',
-									activebackground=START_ACTIVE,
-									activeforeground='white',
-									command=self.activate_watcher_thread)
-		self.startButton.place(relx=0.5, rely=0.5, anchor=CENTER)
+        self.screen_width = self.window.winfo_screenwidth()
+        self.screen_height = self.window.winfo_screenheight()
+        self.scaleX = self.screen_width / DEFAULT_WIDTH
+        self.scaleY = self.screen_height / DEFAULT_HEIGHT
+        self.font = tkFont.Font(family='Tahoma', size=20, weight='bold')
 
-	# Stop button. Stops the Watcher.
-	def stop(self):
-		self.watcher_status = True
-		self.window.title('HFS is running...')
-		self.title = 'HFS is running...'
-		self.startButton = Button(	self.window, 
-									text='Stop', 
-									width=16, height=2, 
-									font=self.font, 
-									bg=BUTTON_STOP, 
-									fg='white',
-									activebackground=STOP_ACTIVE,
-									activeforeground='white',
-									command=self.start)
-		self.startButton.place(relx=0.5, rely=0.5, anchor=CENTER)
+        # Load + pre-scale the template images once (not on every frame).
+        self.favourite, self.fav_size = self._load_template(FAVOURITE)
+        newtalent, self.talent_size = self._load_template(NEWTALENT)
+        self.newtalent = self.clean_image(newtalent)
 
-	# Creates a thread inwhich to run the watcher.
-	def activate_watcher_thread(self):
-		self.thread = threading.Thread(target=self.start_watcher, daemon=True)
-		self.thread.start()
+        self.watcher_status = False
+        self.thread = None
+        self.button = Button(self.window, text='Start', width=16, height=2,
+                             font=self.font, bg=BUTTON_START, fg='white',
+                             activebackground=START_ACTIVE, activeforeground='white',
+                             command=self.on_start)
+        self.button.place(relx=0.5, rely=0.5, anchor=CENTER)
 
-	# Exits Watcher, destroys all windows.
-	def exit(self):
-		self.watcher_status = False
-		self.thread.join()
-		self.window.destroy()
-		self.window.quit()
-		sys.exit()
+        self.window.mainloop()
 
-	# Gets the currently focused window.
-	def check_focus(self):
-		return win32gui.GetWindowText(win32gui.GetForegroundWindow())
+    # ── Template loading ─────────────────────────────────────────
 
-	# Starts main program.
-	def start_watcher(self):
-		self.stop()
-		while self.watcher_status == True:
-			while self.check_focus() != 'Heroes of the Storm':
-				time.sleep(2)
-			time.sleep(1)
-			image = self.get_screenshot()
-			loc = self.check_for_hearts(image)
-			new = self.check_for_new_talent(image)
-			if loc != None and new == True:
-				x, y = self.mouse_position()
-				self.select_talent(loc)
-				self.mouse_move(x, y)
-			elif loc == None and new == True:
-				x, y = self.mouse_position()
-				self.open_talent()
-				self.mouse_move(x, y)
-				time.sleep(.2)
-				image = self.get_screenshot()
-				loc = self.check_for_hearts(image)
-				x, y = self.mouse_position()
-				if loc != None:
-					self.select_talent(loc)
-					self.mouse_move(x, y)
-		
-	# Moves the mouse cursor to target location.
-	def mouse_move(self, x, y):
-		ctypes.windll.user32.SetCursorPos(x, y)
+    def _load_template(self, path):
+        """Read an image, scale it to the current resolution, return (img, (w, h))."""
+        img = cv2.imread(path)
+        if img is None:
+            raise FileNotFoundError(f"Could not load required image: {path}")
+        h, w = img.shape[:2]
+        w, h = self.scale_XY(w, h)
+        img = cv2.resize(img, (w, h))
+        return img, (w, h)
 
-	# Left clicks the mouse.
-	def mouse_click(self):
-		ctypes.windll.user32.mouse_event(2, 0, 0, 0, 0)
-		ctypes.windll.user32.mouse_event(4, 0, 0, 0, 0)
+    # ── Start / stop (all UI changes happen on the main thread) ──
 
-	# Gets the users current cursor position
-	def mouse_position(self):
-		x, y = win32gui.GetCursorPos()
-		return (x, y)
+    def on_start(self):
+        if self.watcher_status:
+            return
+        self.watcher_status = True
+        self.window.title('HFS is running...')
+        self.button.config(text='Stop', bg=BUTTON_STOP,
+                           activebackground=STOP_ACTIVE, command=self.on_stop)
+        self.thread = threading.Thread(target=self.start_watcher, daemon=True)
+        self.thread.start()
 
-	# Scale number by the X scaler.
-	def scaled_X(self, num):
-		return round(num * self.scaleX)
+    def on_stop(self):
+        self.watcher_status = False
+        self.window.title('HFS has stopped...')
+        self.button.config(text='Start', bg=BUTTON_START,
+                           activebackground=START_ACTIVE, command=self.on_start)
 
-	# Scale number by the Y scaler.
-	def scaled_Y(self, num):
-		return round(num * self.scaleY)
+    def on_close(self):
+        self.watcher_status = False
+        self.window.destroy()
 
-	# Scale by the X and Y scaler.
-	def scale_XY(self, x, y):
-		x = self.scaled_X(x)
-		y = self.scaled_Y(y)
-		return x, y
+    # ── Window focus ─────────────────────────────────────────────
 
-	# Compares images, returning a SSIM number. 1 is a perfect match.
-	def compare_images(self, img1, img2):
-		return structural_similarity(img1, img2, multichannel=True)
+    def check_focus(self):
+        """Title of the currently focused window."""
+        return win32gui.GetWindowText(win32gui.GetForegroundWindow())
 
-	# Takes a screenshot and returns it.
-	def get_screenshot(self):
-		image = pyautogui.screenshot()
-		image = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
-		return image
+    # ── Main watch loop (runs on the worker thread) ──────────────
 
-	# Checks for 'favourite.png' graphic in screenshot.
-	def check_for_hearts(self, image):
-		favourite = cv2.imread(FAVOURITE)
-		height, width, channels = favourite.shape
-		width, height = self.scale_XY(width, height)
-		favourite = cv2.resize(favourite, (width, height))
-		for count, heart in enumerate(HEART_LOCS):
-			x, y, w, h = heart
-			x, y = self.scale_XY(x, y)
-			crop = image[y:y+height, x:x+width]
-			comp = self.compare_images(crop, favourite)
-			if comp > .90:
-				return count
-		return None
+    def start_watcher(self):
+        while self.watcher_status:
+            if self.check_focus() != GAME_TITLE:
+                time.sleep(2)
+                continue
 
-	# Checks if new talent available.
-	def check_for_new_talent(self, image):
-		talent = cv2.imread(NEWTALENT)
-		height, width, channels = talent.shape
-		width, height = self.scale_XY(width, height)
-		talent = cv2.resize(talent, (width, height))
+            time.sleep(1)
+            image = self.get_screenshot()
+            loc = self.check_for_hearts(image)
+            new = self.check_for_new_talent(image)
 
-		x, y, w, h = CHECK_TALENT
-		x, y = self.scale_XY(x, y)
-		crop = image[y:y+height, x:x+width]
-		talent = self.clean_image(talent)
-		crop = self.clean_image(crop)
-		comp = self.compare_images(crop, talent)
-		if comp > .85:
-			return True
-		return False
+            if new and loc is not None:
+                x, y = self.mouse_position()
+                self.select_talent(loc)
+                self.mouse_move(x, y)
+            elif new and loc is None:
+                # Talent panel may be closed — open it, then look again.
+                x, y = self.mouse_position()
+                self.open_talent()
+                self.mouse_move(x, y)
+                time.sleep(.2)
+                image = self.get_screenshot()
+                loc = self.check_for_hearts(image)
+                if loc is not None:
+                    x, y = self.mouse_position()
+                    self.select_talent(loc)
+                    self.mouse_move(x, y)
 
-	# Masks image so that only near-to-full whites remain.
-	def clean_image(self, image):
-		MIN, MAX = CHECK_TALENT_RANGE
-		lower = np.array(MIN, dtype=np.uint8)
-		upper = np.array(MAX, dtype=np.uint8)
-		hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-		mask = cv2.inRange(hsv, lower, upper)
-		output = cv2.bitwise_and(image, image, mask=mask)
-		return output
+    # ── Mouse helpers ────────────────────────────────────────────
 
-	# Selects specified talent.
-	def select_talent(self, loc):
-		x, y = TALENT_SELECT
-		x, y = self.scale_XY(x, y)
-		y += (round(self.scaleY * 77) * loc)
-		self.mouse_move(x, y)
-		self.mouse_click()
+    def mouse_move(self, x, y):
+        ctypes.windll.user32.SetCursorPos(x, y)
 
-	# Open talent selections.
-	def open_talent(self):
-		Tx, Ty = TALENT_OPEN
-		Tx, Ty = self.scale_XY(Tx, Ty)
-		self.mouse_move(Tx, Ty)
-		self.mouse_click()
+    def mouse_click(self):
+        ctypes.windll.user32.mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
+        ctypes.windll.user32.mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
+
+    def mouse_position(self):
+        return win32gui.GetCursorPos()
+
+    # ── Scaling helpers ──────────────────────────────────────────
+
+    def scaled_X(self, num):
+        return round(num * self.scaleX)
+
+    def scaled_Y(self, num):
+        return round(num * self.scaleY)
+
+    def scale_XY(self, x, y):
+        return self.scaled_X(x), self.scaled_Y(y)
+
+    # ── Image matching ───────────────────────────────────────────
+
+    def compare_images(self, img1, img2):
+        """SSIM similarity (1.0 == identical), robust to skimage version + bad crops."""
+        if img1 is None or img2 is None or img1.shape != img2.shape:
+            return 0.0
+        try:
+            return structural_similarity(img1, img2, channel_axis=-1, data_range=255)
+        except TypeError:
+            # scikit-image < 0.19 used `multichannel` instead of `channel_axis`.
+            return structural_similarity(img1, img2, multichannel=True, data_range=255)
+        except ValueError:
+            # e.g. a crop smaller than the SSIM window.
+            return 0.0
+
+    def get_screenshot(self):
+        image = pyautogui.screenshot()
+        return cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
+
+    def check_for_hearts(self, image):
+        """Return the index of the talent row showing the favourite heart, or None."""
+        w, h = self.fav_size
+        for count, heart in enumerate(HEART_LOCS):
+            x, y, _, _ = heart
+            x, y = self.scale_XY(x, y)
+            crop = image[y:y + h, x:x + w]
+            if self.compare_images(crop, self.favourite) > HEART_THRESHOLD:
+                return count
+        return None
+
+    def check_for_new_talent(self, image):
+        """True if the 'new talent available' indicator is on screen."""
+        w, h = self.talent_size
+        x, y, _, _ = CHECK_TALENT
+        x, y = self.scale_XY(x, y)
+        crop = self.clean_image(image[y:y + h, x:x + w])
+        return self.compare_images(crop, self.newtalent) > TALENT_THRESHOLD
+
+    def clean_image(self, image):
+        """Mask everything except near-full whites (via HSV range)."""
+        lower = np.array(CHECK_TALENT_RANGE[0], dtype=np.uint8)
+        upper = np.array(CHECK_TALENT_RANGE[1], dtype=np.uint8)
+        hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+        mask = cv2.inRange(hsv, lower, upper)
+        return cv2.bitwise_and(image, image, mask=mask)
+
+    # ── Talent actions ───────────────────────────────────────────
+
+    def select_talent(self, loc):
+        x, y = self.scale_XY(*TALENT_SELECT)
+        y += round(self.scaleY * TALENT_ROW_SPACING) * loc
+        self.mouse_move(x, y)
+        self.mouse_click()
+
+    def open_talent(self):
+        x, y = self.scale_XY(*TALENT_OPEN)
+        self.mouse_move(x, y)
+        self.mouse_click()
+
 
 if __name__ == '__main__':
-	win = Window()
-	sys.exit()
+    Window()
+    sys.exit()
