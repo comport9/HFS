@@ -4,6 +4,7 @@ Auto-selects your favourited talents in Heroes of the Storm via on-screen image
 matching. Press Start, then play; favourited talents are picked for you.
 """
 
+import os
 import sys
 import time
 import ctypes
@@ -17,6 +18,10 @@ import numpy as np
 import pyautogui
 import win32gui
 from skimage.metrics import structural_similarity
+
+# Resolve resource files relative to this script, not the current working
+# directory — so double-clicking / shortcuts work, not just `cd`-then-run.
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 FAVOURITE = 'heart.png'
 NEWTALENT = 'newtalent.png'
@@ -62,7 +67,7 @@ class Window:
         self.window.title('HotS Favourites Selector')
         self.window.geometry('300x110')
         self.window.configure(background=BACKGROUND_COLOUR)
-        self.window.iconbitmap('HFS.ico')
+        self.window.iconbitmap(os.path.join(BASE_DIR, 'HFS.ico'))
         self.window.resizable(False, False)
         self.window.protocol('WM_DELETE_WINDOW', self.on_close)
 
@@ -91,7 +96,7 @@ class Window:
 
     def _load_template(self, path):
         """Read an image, scale it to the current resolution, return (img, (w, h))."""
-        img = cv2.imread(path)
+        img = cv2.imread(os.path.join(BASE_DIR, path))
         if img is None:
             raise FileNotFoundError(f"Could not load required image: {path}")
         h, w = img.shape[:2]
